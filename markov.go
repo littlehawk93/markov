@@ -96,12 +96,81 @@ func (me *node) seek(words []string, index int, ignoreCase bool) *node {
 	return nil
 }
 
-func (me *node) nextWord(ran *rand.Rand) {
+func (me *node) nextWord(ran *rand.Rand) string {
 
+	decision := uint64(ran.Int63n(int64(me.weightSum)))
+
+	var currWeight uint64
+	currWeight = 0
+
+	for key := range me.children {
+
+		childWeight, _ := me.childWeights[key]
+
+		currWeight += childWeight
+
+		if decision < currWeight {
+			return key
+		}
+	}
+
+	return ""
+}
+
+// NextSentence generates a new random sentence based on trained data
+func (me *Chain) NextSentence() []string {
+
+	words := make([]string, 0)
+
+	words = append(words, me.sentenceStartTreeRoot.nextWord(me.ran))
+
+	for true {
+
+		var node *node
+
+		if len(words) > me.maxDepth {
+			node = me.wordTreeRoot.seek(words[len(words)-me.maxDepth:], 0, me.ignoreCase)
+		} else {
+			node = me.wordTreeRoot.seek(words, 0, me.ignoreCase)
+		}
+
+		if node == nil {
+			break
+		}
+
+		word := node.nextWord(me.ran)
+
+		if word == "" {
+			break
+		}
+
+		words = append(words, word)
+	}
+
+	return words
 }
 
 func (me *Chain) trainLine(words []string) {
 
+	weights := make([]uint64, len(words))
+
+	for i := 0; i < len(weights); i++ {
+		weights[i] = 1
+	}
+
+	for i := 0; i < len(words); i++ {
+
+		word := words[i]
+
+		if i == 0 {
+			me.sentenceStartTreeRoot.addChild(word, 1, me.ignoreCase)
+			me.wordTreeRoot.addChild(word, 1, me.ignoreCase)
+		} else if i < me.maxDepth {
+			me.wordTreeRoot.addChildren(words[0:i+1], weights[0:i+1], i, me.ignoreCase)
+		} else {
+			me.wordTreeRoot.addChildren(words[i-me.maxDepth+1:i+1], weights[i-me.maxDepth+1:i+1], i, me.ignoreCase)
+		}
+	}
 }
 
 // Train trains this markov chain by reading text from the provided reader
