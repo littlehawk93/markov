@@ -17,7 +17,9 @@ type Chain struct {
 // Generate create a new line of text based on trained data for this Markov chain
 func (me *Chain) Generate() []string {
 
-	dist := gaussian.NewGaussian(me.wordStats.Mean(), me.wordStats.Var())
+	mean := me.wordStats.Mean()
+
+	dist := gaussian.NewGaussian(mean, mean/2.0)
 
 	result := make([]string, 0)
 

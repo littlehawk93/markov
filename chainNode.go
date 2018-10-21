@@ -29,7 +29,13 @@ func (me *chainNode) Next() string {
 		return ""
 	}
 
-	val := rand.Uint64() % me.weightSum
+	var val uint64
+
+	if me.weightSum == 0 {
+		val = 0
+	} else {
+		val = rand.Uint64() % me.weightSum
+	}
 
 	currSum := uint64(0)
 
@@ -47,6 +53,7 @@ func (me *chainNode) Next() string {
 
 func (me *chainNode) TrainWeighted(token string, weight uint64) {
 
+	me.weightSum += weight
 	me.next[token] = me.next[token] + weight
 }
 
