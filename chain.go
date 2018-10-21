@@ -2,73 +2,131 @@ package markov
 
 import (
 	"math/rand"
+
+	"github.com/chobie/go-gaussian"
+	"github.com/littlehawk93/rollstat"
 )
 
-// Chain a markov chain. Generates randomized sequences of text based on training data
+// Chain a markov chain
 type Chain struct {
-	ignoreCase            bool
-	maxDepth              int
-	ran                   *rand.Rand
-	wordTreeRoot          *node
-	sentenceStartTreeRoot *node
+	keyDepth  uint
+	nodes     []chainNode
+	wordStats *rollstat.FloatStat
 }
 
-// NextSentence generates a new random sentence based on trained data
-func (me *Chain) NextSentence() []string {
+// Generate create a new line of text based on trained data for this Markov chain
+func (me *Chain) Generate() []string {
 
-	words := make([]string, 0)
+	dist := gaussian.NewGaussian(me.wordStats.Mean(), me.wordStats.Var())
 
-	words = append(words, me.sentenceStartTreeRoot.nextWord(me.ran))
+	result := make([]string, 0)
 
-	for true {
+	key := me.newKey()
 
-		var node *node
+	for rand.Float64() > dist.Cdf(float64(len(result))) {
 
-		if len(words) > me.maxDepth {
-			node = me.wordTreeRoot.seek(words[len(words)-me.maxDepth:], 0, me.ignoreCase)
-		} else {
-			node = me.wordTreeRoot.seek(words, 0, me.ignoreCase)
-		}
+		index := me.findNode(key)
 
-		if node == nil {
+		if index == -1 {
 			break
 		}
 
-		word := node.nextWord(me.ran)
+		nextToken := me.nodes[index].Next()
 
-		if word == "" {
+		if nextToken == "" {
 			break
 		}
 
-		words = append(words, word)
+		result = append(result, nextToken)
+		key = me.pushKey(key, nextToken)
 	}
 
-	return words
+	return result
 }
 
-// TrainLine trains the markov chain with a single line of text
-func (me *Chain) TrainLine(line []string) {
+// Train train this Markov chain with a set of tokens of equal weight
+func (me *Chain) Train(tokens []string) {
 
-	for i := 0; i < len(line); i++ {
+	me.TrainWeighted(tokens, 1)
+}
 
-		word := line[i]
+// TrainWeighted train this Markov chain with a set of tokens at as specified weight
+func (me *Chain) TrainWeighted(tokens []string, weight uint64) {
 
-		if i == 0 {
-			me.sentenceStartTreeRoot.addChild(word, me.ignoreCase)
-			me.wordTreeRoot.addChild(word, me.ignoreCase)
-		} else if i < me.maxDepth {
-			me.wordTreeRoot.addChildren(line[0:i+1], i, me.ignoreCase)
-		} else {
-			me.wordTreeRoot.addChildren(line[i-me.maxDepth+1:i+1], i, me.ignoreCase)
+	me.wordStats.Add(float64(len(tokens)))
+
+	key := me.newKey()
+
+	for _, token := range tokens {
+
+		index := me.matchNode(key)
+
+		if index == -1 {
+			newNode := newChainNode(key)
+			me.nodes = append(me.nodes, newNode)
+			index = len(me.nodes) - 1
+		}
+
+		me.nodes[index].TrainWeighted(token, weight)
+
+		key = me.pushKey(key, token)
+	}
+
+	index := me.matchNode(key)
+
+	if index == -1 {
+		newNode := newChainNode(key)
+		me.nodes = append(me.nodes, newNode)
+		index = len(me.nodes) - 1
+	}
+
+	me.nodes[index].TrainWeighted("", weight)
+}
+
+func (me *Chain) findNode(key []string) int {
+
+	for i := 0; i < len(key); i++ {
+
+		if index := me.matchNode(key); index != -1 {
+			return index
+		}
+
+		key[i] = ""
+	}
+
+	return -1
+}
+
+func (me *Chain) matchNode(key []string) int {
+
+	for i, node := range me.nodes {
+		if node.Equals(key) {
+			return i
 		}
 	}
+
+	return len(me.nodes) - 1
 }
 
-// Train trains this markov chain by reading arrays of words
-func (me *Chain) Train(lines [][]string) {
+func (me *Chain) newKey() []string {
 
-	for _, line := range lines {
+	key := make([]string, me.keyDepth)
 
-		me.TrainLine(line)
+	for i := uint(0); i < me.keyDepth; i++ {
+		key[i] = ""
 	}
+
+	return key
+}
+
+func (me *Chain) pushKey(key []string, value string) []string {
+
+	key = append(key, value)
+	return key[1:]
+}
+
+// NewChain initialize a new Markov Chain instance
+func NewChain(depth uint) *Chain {
+
+	return &Chain{keyDepth: depth, nodes: make([]chainNode, 0), wordStats: &rollstat.FloatStat{}}
 }
